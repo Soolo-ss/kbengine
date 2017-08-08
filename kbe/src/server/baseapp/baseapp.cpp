@@ -304,25 +304,32 @@ void Baseapp::onShutdown(bool first)
 		int count = g_serverConfig.getBaseApp().perSecsDestroyEntitySize;
 		Entities<Base>::ENTITYS_MAP& entities =  this->pEntities()->getEntities();
 
-		while(count > 0)
+		while(count > 0 && entities.size() > 0)
 		{
-			bool done = false;
+			std::vector<ENTITY_ID> vecs;
+			
 			Entities<Base>::ENTITYS_MAP::iterator iter = entities.begin();
 			for(; iter != entities.end(); ++iter)
 			{
 				//if(static_cast<Base*>(iter->second.get())->hasDB() && 
 				//	static_cast<Base*>(iter->second.get())->cellMailbox() == NULL)
 				{
-					this->destroyEntity(static_cast<Base*>(iter->second.get())->id(), true);
+					vecs.push_back(static_cast<Base*>(iter->second.get())->id());
 
-					count--;
-					done = true;
-					break;
+					if(--count == 0)
+						break;
 				}
 			}
 
-			if(!done)
-				break;
+			std::vector<ENTITY_ID>::iterator iter1 = vecs.begin();
+			for(; iter1 != vecs.end(); ++iter1)
+			{
+				Base* e = this->findEntity((*iter1));
+				if(!e)
+					continue;
+				
+				this->destroyEntity((*iter1), true);
+			}
 		}
 	}
 }
@@ -590,6 +597,14 @@ void Baseapp::finalise()
 //-------------------------------------------------------------------------------------
 void Baseapp::onCellAppDeath(Network::Channel * pChannel)
 {
+	if(pChannel && pChannel->isExternal())
+		return;
+	
+	if(shuttingdown_ != SHUTDOWN_STATE_STOP)
+	{
+		return;
+	}
+	
 	PyObject* pyarg = PyTuple_New(1);
 
 	PyObject* pyobj = PyTuple_New(2);
@@ -3147,9 +3162,11 @@ void Baseapp::onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine
 	uint32 nrows = 0;
 	uint32 nfields = 0;
 	uint64 affectedRows = 0;
+	uint64 lastInsertID = 0;
 
 	PyObject* pResultSet = NULL;
 	PyObject* pAffectedRows = NULL;
+	PyObject* pLastInsertID = NULL;
 	PyObject* pErrorMsg = NULL;
 
 	s >> callbackID;
@@ -3167,6 +3184,9 @@ void Baseapp::onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine
 			pAffectedRows = Py_None;
 			Py_INCREF(pAffectedRows);
 
+			pLastInsertID = Py_None;
+			Py_INCREF(pLastInsertID);
+
 			s >> nrows;
 
 			pResultSet = PyList_New(nrows);
@@ -3180,7 +3200,7 @@ void Baseapp::onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine
 
 					PyObject* pCell = NULL;
 						
-					if(cell == "NULL")
+					if(cell == "KBE_QUERY_DB_NULL")
 					{
 						Py_INCREF(Py_None);
 						pCell = Py_None;
@@ -3207,6 +3227,9 @@ void Baseapp::onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine
 			s >> affectedRows;
 
 			pAffectedRows = PyLong_FromUnsignedLongLong(affectedRows);
+
+			s >> lastInsertID;
+			pLastInsertID = PyLong_FromUnsignedLongLong(lastInsertID);
 		}
 	}
 	else
@@ -3218,6 +3241,9 @@ void Baseapp::onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine
 
 			pAffectedRows = Py_None;
 			Py_INCREF(pAffectedRows);
+
+			pLastInsertID = Py_None;
+			Py_INCREF(pLastInsertID);
 	}
 
 	s.done();
@@ -3233,8 +3259,8 @@ void Baseapp::onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine
 		if(pyfunc != NULL)
 		{
 			PyObject* pyResult = PyObject_CallFunction(pyfunc.get(), 
-												const_cast<char*>("OOO"), 
-												pResultSet, pAffectedRows, pErrorMsg);
+												const_cast<char*>("OOOO"), 
+												pResultSet, pAffectedRows, pLastInsertID, pErrorMsg);
 
 			if(pyResult != NULL)
 				Py_DECREF(pyResult);
@@ -3250,6 +3276,7 @@ void Baseapp::onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine
 
 	Py_XDECREF(pResultSet);
 	Py_XDECREF(pAffectedRows);
+	Py_XDECREF(pLastInsertID);
 	Py_XDECREF(pErrorMsg);
 }
 
@@ -3666,24 +3693,28 @@ void Baseapp::loginBaseapp(Network::Channel* pChannel,
 	if(ptinfos->password != password)
 	{
 		loginBaseappFailed(pChannel, accountName, SERVER_ERR_PASSWORD);
+		pendingLoginMgr_.removeNextTick(accountName);
 		return;
 	}
 
 	if((ptinfos->flags & ACCOUNT_FLAG_LOCK) > 0)
 	{
 		loginBaseappFailed(pChannel, accountName, SERVER_ERR_ACCOUNT_LOCK);
+		pendingLoginMgr_.removeNextTick(accountName);
 		return;
 	}
 
 	if((ptinfos->flags & ACCOUNT_FLAG_NOT_ACTIVATED) > 0)
 	{
 		loginBaseappFailed(pChannel, accountName, SERVER_ERR_ACCOUNT_NOT_ACTIVATED);
+		pendingLoginMgr_.removeNextTick(accountName);
 		return;
 	}
 
 	if(ptinfos->deadline > 0 && ::time(NULL) - ptinfos->deadline <= 0)
 	{
 		loginBaseappFailed(pChannel, accountName, SERVER_ERR_ACCOUNT_DEADLINE);
+		pendingLoginMgr_.removeNextTick(accountName);
 		return;
 	}
 
@@ -3691,6 +3722,7 @@ void Baseapp::loginBaseapp(Network::Channel* pChannel,
 	{
 		ERROR_MSG("Baseapp::loginBaseapp: idClient size is 0.\n");
 		loginBaseappFailed(pChannel, accountName, SERVER_ERR_SRV_NO_READY);
+		pendingLoginMgr_.removeNextTick(accountName);
 		return;
 	}
 
@@ -3700,14 +3732,14 @@ void Baseapp::loginBaseapp(Network::Channel* pChannel,
 		INFO_MSG(fmt::format("Baseapp::loginBaseapp: user[{}] has entity({}).\n",
 			accountName.c_str(), ptinfos->entityID));
 
+		pendingLoginMgr_.removeNextTick(accountName);
+
 		Proxy* base = static_cast<Proxy*>(findEntity(ptinfos->entityID));
 		if(base == NULL || base->isDestroyed())
 		{
 			loginBaseappFailed(pChannel, accountName, SERVER_ERR_BUSY);
 			return;
 		}
-		
-		pendingLoginMgr_.removeNextTick(accountName);
 
 		// 防止在onLogOnAttempt中销毁了
 		Py_INCREF(base);
@@ -3746,7 +3778,7 @@ void Baseapp::loginBaseapp(Network::Channel* pChannel,
 				base->clientMailbox()->addr(pChannel->addr());
 				base->addr(pChannel->addr());
 				base->setClientType(ptinfos->ctype);
-				base->setClientDatas(ptinfos->datas);
+				base->setLoginDatas(ptinfos->datas);
 				createClientProxies(base, true);
 				base->onGetWitness();
 			}
@@ -3759,7 +3791,7 @@ void Baseapp::loginBaseapp(Network::Channel* pChannel,
 				base->clientMailbox(entityClientMailbox);
 				base->addr(pChannel->addr());
 				base->setClientType(ptinfos->ctype);
-				base->setClientDatas(ptinfos->datas);
+				base->setLoginDatas(ptinfos->datas);
 
 				// 将通道代理的关系与该entity绑定， 在后面通信中可提供身份合法性识别
 				entityClientMailbox->getChannel()->proxyID(base->id());
@@ -3924,6 +3956,9 @@ void Baseapp::onQueryAccountCBFromDbmgr(Network::Channel* pChannel, KBEngine::Me
 		return;
 	}
 
+	std::string bindatas;
+	s.readBlob(bindatas);
+
 	Proxy* base = static_cast<Proxy*>(createEntity(g_serverConfig.getDBMgr().dbAccountEntityScriptType,
 		NULL, false, entityID));
 
@@ -3942,7 +3977,8 @@ void Baseapp::onQueryAccountCBFromDbmgr(Network::Channel* pChannel, KBEngine::Me
 	base->hasDB(true);
 	base->dbid(dbInterfaceIndex, dbid);
 	base->setClientType(ptinfos->ctype);
-	base->setClientDatas(ptinfos->datas);
+	base->setLoginDatas(ptinfos->datas);
+	base->setCreateDatas(bindatas);
 
 	PyObject* pyDict = createCellDataDictFromPersistentStream(s, g_serverConfig.getDBMgr().dbAccountEntityScriptType);
 
@@ -4365,6 +4401,12 @@ void Baseapp::onRemoteCallCellMethodFromClient(Network::Channel* pChannel, KBEng
 //-------------------------------------------------------------------------------------
 void Baseapp::onUpdateDataFromClient(Network::Channel* pChannel, KBEngine::MemoryStream& s)
 {
+	if(shuttingdown_ != SHUTDOWN_STATE_STOP)
+	{
+		s.done();
+		return;
+	}
+
 	AUTO_SCOPED_PROFILE("onUpdateDataFromClient");
 
 	ENTITY_ID srcEntityID = pChannel->proxyID();
@@ -4405,8 +4447,15 @@ void Baseapp::onUpdateDataFromClient(Network::Channel* pChannel, KBEngine::Memor
 	s.done();
 }
 
+//------------------------------------------------------------------------------------- 
 void Baseapp::onUpdateDataFromClientForControlledEntity(Network::Channel* pChannel, KBEngine::MemoryStream& s)
 {
+	if(shuttingdown_ != SHUTDOWN_STATE_STOP)
+	{
+		s.done();
+		return;
+	}
+	
 	ENTITY_ID srcEntityID = pChannel->proxyID();
 	if(srcEntityID <= 0)
 	{

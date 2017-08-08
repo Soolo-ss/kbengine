@@ -169,7 +169,7 @@ Entity::~Entity()
 	KBE_ASSERT(pWitness_ == NULL);
 
 	SAFE_RELEASE(pControllers_);
-	SAFE_RELEASE(pEntityCoordinateNode_);
+	KBE_ASSERT(pEntityCoordinateNode_ == NULL);
 
 	Py_DECREF(pPyPosition_);
 	pPyPosition_ = NULL;
@@ -262,8 +262,9 @@ void Entity::onDestroy(bool callScript)
 		ERROR_MSG(fmt::format("{}::onDestroy(): id={}, witnesses_count({}/{}) != 0, isReal={}, spaceID={}, position=({},{},{})\n", 
 			scriptName(), id(), witnesses_count_, witnesses_.size(), isReal(), this->spaceID(), position().x, position().y, position().z));
 
-		std::list<ENTITY_ID>::iterator it = witnesses_.begin();
-		for (; it != witnesses_.end(); ++it)
+		std::list<ENTITY_ID> witnesses_copy = witnesses_;
+		std::list<ENTITY_ID>::iterator it = witnesses_copy.begin();
+		for (; it != witnesses_copy.end(); ++it)
 		{
 			Entity *ent = Cellapp::getSingleton().findEntity((*it));
 
@@ -279,11 +280,16 @@ void Entity::onDestroy(bool callScript)
 						if ((*aoi_iter)->pEntity() == this)
 						{
 							inTargetAOI = true;
+							ent->pWitness()->_onLeaveAOI((*aoi_iter));
 							break;
 						}
 					}
 				}
-
+				else
+				{
+					ent->delWitnessed(this);
+				}
+				
 				ERROR_MSG(fmt::format("\t=>witnessed={}({}), isDestroyed={}, isReal={}, inTargetAOI={}, spaceID={}, position=({},{},{})\n", 
 					ent->scriptName(), (*it), ent->isDestroyed(), ent->isReal(), inTargetAOI, ent->spaceID(), ent->position().x, ent->position().y, ent->position().z));
 			}
@@ -291,13 +297,18 @@ void Entity::onDestroy(bool callScript)
 			{
 				ERROR_MSG(fmt::format("\t=> witnessed={}, not found entity!\n", (*it)));
 			}
+			
+			witnesses_count_ = 0;
+			witnesses_.clear();
 		}
 
-		KBE_ASSERT(witnesses_count_ == 0);
+		//KBE_ASSERT(witnesses_count_ == 0);
 	}
 
 	pPyPosition_->onLoseRef();
 	pPyDirection_->onLoseRef();
+
+	SAFE_RELEASE(pEntityCoordinateNode_);
 }
 
 //-------------------------------------------------------------------------------------
@@ -424,7 +435,7 @@ int Entity::pySetControlledBy(PyObject *value)
 
 	EntityMailbox* mailbox = NULL;
 
-	if (value != Py_None )
+	if (value != Py_None)
 	{
 		if (!PyObject_TypeCheck(value, EntityMailbox::getScriptType()) || !((EntityMailbox *)value)->isBase())
 		{
@@ -530,6 +541,7 @@ bool Entity::setControlledBy(EntityMailbox* controllerBaseMailbox)
 			sendControlledByStatusMessage(controllerBaseMailbox, 1);
 		}
 	}
+
 	return true;
 }
 
@@ -544,6 +556,8 @@ void Entity::sendControlledByStatusMessage(EntityMailbox* baseMailbox, int8 isCo
 	{
 		pChannel = (static_cast<EntityMailbox*>(clientMB))->getChannel();
 	}
+
+	Py_DECREF(clientMB);
 
 	if (!pChannel)
 		return;
@@ -1292,7 +1306,6 @@ void Entity::delWitnessed(Entity* entity)
 
 		SCRIPT_OBJECT_CALL_ARGS1(this, const_cast<char*>("onLoseControlledBy"),
 			const_cast<char*>("i"), entity->id());
-
 	}
 
 	// 延时执行
@@ -2092,12 +2105,12 @@ void Entity::onUpdateDataFromClient(KBEngine::MemoryStream& s)
 	Direction3D dir;
 	uint8 isOnGround = 0;
 	float yaw, pitch, roll;
-	SPACE_ID currspace;
+	SPACE_ID currSpace;
 
-	s >> pos.x >> pos.y >> pos.z >> roll >> pitch >> yaw >> isOnGround >> currspace;
+	s >> pos.x >> pos.y >> pos.z >> roll >> pitch >> yaw >> isOnGround >> currSpace;
 	isOnGround_ = isOnGround > 0;
 
-	if(spaceID_ != currspace)
+	if(spaceID_ != currSpace)
 	{
 		s.done();
 		return;
@@ -3076,6 +3089,15 @@ void Entity::teleportFromBaseapp(Network::Channel* pChannel, COMPONENT_ID cellAp
 		return;
 	}
 
+	if(hasFlags(ENTITY_FLAGS_TELEPORT_START))
+	{
+		ERROR_MSG(fmt::format("{}::teleportFromBaseapp: In transit! entity={}, sourceBaseAppID={}.\n",
+			this->scriptName(), this->id(), sourceBaseAppID));
+
+		_sendBaseTeleportResult(this->id(), sourceBaseAppID, 0, lastSpaceID, false);
+		return;
+	}
+	
 	// 如果不在一个cell上
 	if(cellAppID != g_componentID)
 	{
@@ -3280,6 +3302,16 @@ void Entity::teleportRefEntity(Entity* entity, Position3D& pos, Direction3D& dir
 //-------------------------------------------------------------------------------------
 void Entity::teleportRefMailbox(EntityMailbox* nearbyMBRef, Position3D& pos, Direction3D& dir)
 {
+	if(hasFlags(ENTITY_FLAGS_TELEPORT_START))
+	{
+		PyErr_Format(PyExc_Exception, "%s::teleport: %d, In transit!\n", 
+			scriptName(), id());
+
+		PyErr_PrintEx(0);
+
+		onTeleportFailure();
+	}
+	
 	if (!nearbyMBRef->isCellReal())
 	{
 		char buf[1024];
@@ -3310,8 +3342,6 @@ void Entity::teleportRefMailbox(EntityMailbox* nearbyMBRef, Position3D& pos, Dir
 		Network::Channel* pBaseChannel = baseMailbox()->getChannel();
 		if(pBaseChannel)
 		{
-			addFlags(ENTITY_FLAGS_TELEPORT_START);
-
 			// 同时需要通知base暂存发往cellapp的消息，因为后面如果跳转成功需要切换cellMailbox映射关系到新的cellapp
 			// 为了避免在切换的一瞬间消息次序发生混乱(旧的cellapp消息也会转到新的cellapp上)， 因此需要在传送前进行
 			// 暂存， 传送成功后通知旧的cellapp销毁entity之后同时通知baseapp改变映射关系。
@@ -3682,8 +3712,8 @@ void Entity::changeToGhost(COMPONENT_ID realCell, KBEngine::MemoryStream& s)
 		gm->addRoute(id(), realCell_);
 	}
 
-	DEBUG_MSG(fmt::format("{}::changeToGhost(): {}, realCell={}, spaceID={}.\n", 
-		scriptName(), id(), realCell_, spaceID_));
+	DEBUG_MSG(fmt::format("{}::changeToGhost(): {}, realCell={}, spaceID={}, position=({},{},{}).\n", 
+		scriptName(), id(), realCell_, spaceID_, position().x, position().y, position().z));
 	
 	// 必须放在前面
 	addToStream(s);
@@ -3721,8 +3751,8 @@ void Entity::changeToReal(COMPONENT_ID ghostCell, KBEngine::MemoryStream& s)
 	ghostCell_ = ghostCell;
 	realCell_ = 0;
 
-	DEBUG_MSG(fmt::format("{}::changeToReal(): {}, ghostCell={}, spaceID={}.\n",
-		scriptName(), id(), ghostCell_, spaceID_));
+	DEBUG_MSG(fmt::format("{}::changeToReal(): {}, ghostCell={}, spaceID={}, position=({},{},{}).\n",
+		scriptName(), id(), ghostCell_, spaceID_, position().x, position().y, position().z));
 
 	createFromStream(s);
 }

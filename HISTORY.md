@@ -1,3 +1,71 @@
+###v0.9.18
+
+	2017/8/6
+
+	新增与改善：
+		防止Linux中用户自定义的未知信号造成的信号转信号名识别出错。
+		调整部分调试信息。
+		更新API文档。
+
+
+	BUG修正：
+		修正启动期被第三方库取消SIGPIPE监听的问题。（#498）
+		修正controlledBy功能初始化时获取mailbox时没有减引用。（#499）
+
+
+
+###v0.9.17
+
+	2017/7/8
+
+	新增与改善：
+		getClientDatas支持获得注册时传入的datas。(#493)
+		executeRawDatabaseCommand的回调接口增加参数insertID（回调如：def sqlcallback(result, rows, insertid, error)）。
+		完善bots，使其支持controlledBy机制。
+		WebConsole增加当前用户的UID显示，便于识别当前用户环境。
+		更新API文档。
+
+
+	BUG修正：
+		修正一处错误日志信息。
+
+
+
+###v0.9.16
+
+	2017/6/21
+
+	新增与改善：
+		调整安全关服时实体销毁为分批销毁。
+		添加API: KBEngine.kbassert，用于脚本中断底层，可以通过Core看堆栈信息。
+		优化script::Map，部分操作直接使用原生的Python处理。
+		更新API文档。
+
+
+	BUG修正：
+		修正FixedArray、FixedDict的一些操作导致内存泄漏或者异常问题。
+		修正线程池可能拥有任务时因为异步问题导致没有立即执行任务却睡眠的问题。
+		修正实体处于ghost状态时被调用cell的暴露客户端的方法时对方进程收到请求显示消息参数错误问题。
+
+
+
+###v0.9.15
+
+	2017/6/12
+
+	新增与改善：
+		对loginapp部分功能在Linux使用select替换为poll，避免在Linux上产生的一些问题。（#489）
+		增加配置选项和实体属性entity.volatileInfo.optimized，可以取消实体位置同步优化，任何情况都同步Y，在房间内上下楼层型副本寻路可能有用。（#491）
+		增加写日志的异常处理，当磁盘被写满时会抛出IOException，防止应用程序意外退出。
+		简化跨进程传送流程，增加异步操作时的安全处理机制。
+		更新API文档。
+
+
+	BUG修正：
+		解决某些时候加载持久化的数组顺序不对的问题。
+
+
+
 ###v0.9.14
 
 	2017/6/6

@@ -20,8 +20,7 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef KBE_CELLAPP_H
 #define KBE_CELLAPP_H
-	
-// common include	
+
 #include "entity.h"
 #include "spaces.h"
 #include "cells.h"
@@ -245,6 +244,7 @@ public:
 	*/
 	void reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s);
 	void reqTeleportToCellAppCB(Network::Channel* pChannel, MemoryStream& s);
+	void reqTeleportToCellAppOver(Network::Channel* pChannel, MemoryStream& s);
 
 	/**
 		获取和设置ghost管理器

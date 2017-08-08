@@ -194,7 +194,7 @@ bool DBInterfaceMysql::attach(const char* databaseName)
 		pMysql_ = mysql_init(0);
 		if(pMysql_ == NULL)
 		{
-			ERROR_MSG("DBInterfaceMysql::attach: mysql_init is error!\n");
+			ERROR_MSG("DBInterfaceMysql::attach: mysql_init error!\n");
 			return false;
 		}
 		
@@ -228,7 +228,7 @@ __RECONNECT:
 				pMysql_ = mysql_init(0);
 				if (pMysql_ == NULL)
 				{
-					ERROR_MSG("DBInterfaceMysql::attach: mysql_init is error!\n");
+					ERROR_MSG("DBInterfaceMysql::attach: mysql_init error!\n");
 					return false;
 				}
 
@@ -258,7 +258,7 @@ __RECONNECT:
 
 		if (mysql_set_character_set(mysql(), characterSet_.c_str()) != 0)
 		{
-			ERROR_MSG("DBInterfaceMysql::attach: Could not set client connection character set to UTF-8\n" );
+			ERROR_MSG(fmt::format("DBInterfaceMysql::attach: Could not set client connection character set to {}\n", characterSet_));
 			return false;
 		}
 
@@ -295,7 +295,7 @@ bool DBInterfaceMysql::checkEnvironment()
 	std::string querycmd = "SHOW VARIABLES";
 	if(!query(querycmd.c_str(), querycmd.size(), true))
 	{
-		ERROR_MSG(fmt::format("DBInterfaceMysql::checkEnvironment: {}, query is error!\n", querycmd));
+		ERROR_MSG(fmt::format("DBInterfaceMysql::checkEnvironment: {}, query error!\n", querycmd));
 		return false;
 	}
 
@@ -451,7 +451,7 @@ bool DBInterfaceMysql::query(const char* cmd, uint32 size, bool printlog, Memory
 	{
 		if(printlog)
 		{
-			ERROR_MSG(fmt::format("DBInterfaceMysql::query: has no attach(db).sql:({})\n", lastquery_));
+			ERROR_MSG(fmt::format("DBInterfaceMysql::query: has no attach(db)!\nsql:({})\n", lastquery_));
 		}
 
 		if(result)
@@ -524,7 +524,7 @@ bool DBInterfaceMysql::write_query_result(MemoryStream * result)
 			{
 				if (arow[i] == NULL)
 				{
-					result->appendBlob("NULL", strlen("NULL"));
+					result->appendBlob("KBE_QUERY_DB_NULL", strlen("KBE_QUERY_DB_NULL"));
 				}
 				else
 				{
@@ -539,12 +539,17 @@ bool DBInterfaceMysql::write_query_result(MemoryStream * result)
 	{
 		uint32 nfields = 0;
 		uint64 affectedRows = 0;
+		uint64 lastInsertID = 0;
 		
 		if(mysql())
+		{
 			affectedRows = mysql()->affected_rows;
+			lastInsertID = mysql_insert_id(mysql());
+		}
 		
 		(*result) << nfields;
 		(*result) << affectedRows;
+		(*result) << lastInsertID;
 	}
 
 	return true;
@@ -555,7 +560,7 @@ bool DBInterfaceMysql::getTableNames(std::vector<std::string>& tableNames, const
 {
 	if(pMysql_ == NULL)
 	{
-		ERROR_MSG("DBInterfaceMysql::query: has no attach(db).\n");
+		ERROR_MSG("DBInterfaceMysql::getTableNames: has no attach(db).\n");
 		return false;
 	}
 
@@ -632,7 +637,7 @@ void DBInterfaceMysql::getFields(TABLE_FIELDS& outs, const char* tableName)
 	MYSQL_RES*	result = mysql_list_fields(mysql(), sqlname.c_str(), NULL);
 	if(result == NULL)
 	{
-		ERROR_MSG(fmt::format("EntityTableMysql::loadFields:{}\n", getstrerror()));
+		ERROR_MSG(fmt::format("EntityTableMysql::getFields:{}\n", getstrerror()));
 		return;
 	}
 
