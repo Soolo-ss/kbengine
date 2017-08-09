@@ -112,8 +112,8 @@ bool DBInterfaceRedis::ping(redisContext* pRedisContext)
 //-------------------------------------------------------------------------------------
 bool DBInterfaceRedis::attach(const char* databaseName)
 {
-	RedisWatcher::initializeWatcher();
-		
+	//RedisWatcher::initializeWatcher();
+
 	if(db_port_ == 0)
 		db_port_ = 6379;
 		
@@ -142,7 +142,9 @@ bool DBInterfaceRedis::attach(const char* databaseName)
 	// √‹¬Î—È÷§
 	if(!ping())
 	{
-		pRedisReply = (redisReply*)redisCommand(c, fmt::format("auth {}", db_password_).c_str());  
+		DEBUG_MSG(db_password_);
+		pRedisReply = (redisReply*)redisCommand(c, fmt::format("auth {}", db_password_).c_str());
+		DEBUG_MSG(fmt::format("auth {}", db_password_));
 		
 		if (NULL == pRedisReply) 
 		{ 

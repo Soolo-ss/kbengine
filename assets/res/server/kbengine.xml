@@ -57,10 +57,8 @@
 		</account_system>
 		
 		<databaseInterfaces>
-			<default>
-				<!-- <host> localhost </host> -->
-				<!-- <databaseName> kbe </databaseName> -->
-			</default>
+			<demo>
+			</demo>
 		</databaseInterfaces>
 	</dbmgr>
 	

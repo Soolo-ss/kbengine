@@ -323,6 +323,18 @@
 					<collation> utf8_bin </collation> 							<!-- Type: String -->
 				</unicodeString>
 			</default>
+
+			<demo>
+				<type> redis </type>
+				<host> 192.168.199.179 </host>
+				<port>  6379 </port>
+				<databaseName> kbe </databaseName>
+
+				<auth>
+					<username> kbe </username>
+					<password> kbe </password>
+				</auth>
+			</demo>
 		</databaseInterfaces>
 
 		<!-- 账号系统
