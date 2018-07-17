@@ -160,52 +160,55 @@ public:
 	{
 		std::string mainKey = context.getMainKey();
 
-		redisReply* pRedisReply = NULL;
-
-		pdbi->query(fmt::format("hgetall {}", mainKey), &pRedisReply, true);
-
-		if (pRedisReply)
+		if (context.dbid > 0)
 		{
-			if (pRedisReply->elements != 0)
+			//已经有这个实体， 对此实体进行更新
+			std::vector<std::string> formerKeys;
+
+			redisReply* now = NULL;
+		}
+		else
+		{
+			//代表没有这个实体 直接写入
+			redisReply* pIncReply = NULL;
+			DBID entityDBID = 0;
+
+			//原子+1 获取最新的DBID
+			pdbi->query("INCR entityDBIDs", &pIncReply, true);
+
+			if (pIncReply)
 			{
-				//已经有这个实体， 对此实体进行更新
-				std::vector<std::string> formerKeys;
+				entityDBID = pIncReply->integer;
 
-				redisReply* now = NULL;
-
-				for (int i = 0; i != now->elements; ++i)
+				if (entityDBID <= 0)
 				{
-					now = pRedisReply->element[i];
-
-					if (now)
-					{
-
-					}
+					ERROR_MSG(fmt::format("error in incr entity dbid"));
+					freeReplyObject(pIncReply);
+					return false;
 				}
-			}
-			else
-			{
-				redisReply* pInsertReply = NULL;
-				//代表没有这个实体 直接写入
-				for (int i = 0; i != context.items.size(); ++i)
-				{
-					KBEShared_ptr<redis::DBContext::DB_ITEM_DATA> pSotvs = context.items[i];
-					pdbi->query(fmt::format("hset {} {} {}", mainKey, pSotvs->name, pSotvs->val), &pInsertReply, true);
 
-					if (pInsertReply)
-					{
-						freeReplyObject(pInsertReply);
-						pInsertReply = NULL;
-					}
-					else
-					{
-						ERROR_MSG("write entity main key error\n");
-						return false;
-					}
-				}
+				freeReplyObject(pIncReply);
 			}
 
-			freeReplyObject(pRedisReply);
+			redisReply* pInsertReply = NULL;
+			mainKey = context.getMainKeyByDBID(entityDBID);
+
+			for (int i = 0; i != context.items.size(); ++i)
+			{
+				KBEShared_ptr<redis::DBContext::DB_ITEM_DATA> pSotvs = context.items[i];
+				pdbi->query(fmt::format("hset {} {} {}", mainKey, pSotvs->name, pSotvs->val), &pInsertReply, true);
+
+				if (pInsertReply)
+				{
+					freeReplyObject(pInsertReply);
+					pInsertReply = NULL;
+				}
+				else
+				{
+					ERROR_MSG("write entity main key error\n");
+					return false;
+				}
+			}
 		}
 
 		return false;
