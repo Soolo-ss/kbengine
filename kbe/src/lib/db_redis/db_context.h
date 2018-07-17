@@ -1,22 +1,4 @@
-/*
-This source file is part of KBEngine
-For the latest info, see http://www.kbengine.org/
-
-Copyright (c) 2008-2017 KBEngine.
-
-KBEngine is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-KBEngine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
- 
-You should have received a copy of the GNU Lesser General Public License
-along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
-*/
+// Copyright 2008-2018 Yolo Technologies, Inc. All Rights Reserved. https://www.comblockengine.com
 
 #ifndef KBE_REDIS_DB_RW_CONTEXT_H
 #define KBE_REDIS_DB_RW_CONTEXT_H
@@ -52,49 +34,91 @@ namespace redis {
 
 	tableName：当前表的名称
  */
+
+
+enum RedisType
+{
+	REDIS_TYPE_STRING = 0,
+	REDIS_TYPE_LISTS = 1,
+	REDIS_TYPE_HASH = 2,
+	REDIS_TYPE_SETS = 3,
+	REDIS_TYPE_SORTED_SET = 4,
+};
+
+
 class DBContext
 {
 public:
-	/**
-		存储所有要操作的表item结构
-	*/
 	struct DB_ITEM_DATA
 	{
-		char sqlval[MAX_BUF];
-		const char* sqlkey;
-		std::string extraDatas;
+		RedisType type;				//Redis中持有的类型
+		char val[MAX_BUF];		    //属性值
+		std::string name;			//属性名
 	};
 
-	typedef std::vector< std::pair< std::string/*tableName*/, KBEShared_ptr< DBContext > > > DB_RW_CONTEXTS;
-	typedef std::vector< KBEShared_ptr<DB_ITEM_DATA>  > DB_ITEM_DATAS;
+	/*
+	* 存储一个Entity的所有Redis同步语句
+	*/
+	DBID dbid;				//Entity的DBID
 
-	DBContext()
-	{
-	}
+	typedef std::vector< KBEShared_ptr<DB_ITEM_DATA> > DB_ITEM_DATAS;
+	typedef std::vector< KBEShared_ptr<DB_ITEM_DATA> > DB_ITEM_ITERATOR;
 
-	~DBContext()
-	{
-	}
-	
 	DB_ITEM_DATAS items;
-	
+
 	std::string tableName;
-	std::string parentTableName;
-	
-	DBID parentTableDBID;
-	DBID dbid;
-	
-	DB_RW_CONTEXTS optable;
-	
-	bool isEmpty;
-	
-	std::map<DBID, std::vector<DBID> > dbids;
-	std::vector< std::string >results;
-	std::vector< std::string >::size_type readresultIdx;
+	std::vector<std::string> itemNames;		//所有属性名
 
-private:
-
+	std::string getMainKey()
+	{
+		return fmt::format("{}:[{}]", tableName, dbid);
+	}
 };
+
+
+//class DBContext
+//{
+//public:
+//	/**
+//		存储所有要操作的表item结构
+//	*/
+//	struct DB_ITEM_DATA
+//	{
+//		char sqlval[MAX_BUF];
+//		const char* sqlkey;
+//		std::string extraDatas;
+//	};
+//
+//	typedef std::vector< std::pair< std::string/*tableName*/, KBEShared_ptr< DBContext > > > DB_RW_CONTEXTS;
+//	typedef std::vector< KBEShared_ptr<DB_ITEM_DATA>  > DB_ITEM_DATAS;
+//
+//	DBContext()
+//	{
+//	}
+//
+//	~DBContext()
+//	{
+//	}
+//	
+//	DB_ITEM_DATAS items;
+//	
+//	std::string tableName;
+//	std::string parentTableName;
+//	
+//	DBID parentTableDBID;
+//	DBID dbid;
+//	
+//	DB_RW_CONTEXTS optable;
+//	
+//	bool isEmpty;
+//	
+//	std::map<DBID, std::vector<DBID> > dbids;
+//	std::vector< std::string >results;
+//	std::vector< std::string >::size_type readresultIdx;
+//
+//private:
+//
+//};
 
 }
 }

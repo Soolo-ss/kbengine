@@ -1,22 +1,4 @@
-/*
-This source file is part of KBEngine
-For the latest info, see http://www.kbengine.org/
-
-Copyright (c) 2008-2017 KBEngine.
-
-KBEngine is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-KBEngine is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
- 
-You should have received a copy of the GNU Lesser General Public License
-along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
-*/
+// Copyright 2008-2018 Yolo Technologies, Inc. All Rights Reserved. https://www.comblockengine.com
 
 
 #include "redis_helper.h"
@@ -27,6 +9,7 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 #include "thread/threadguard.h"
 #include "helper/watcher.h"
 #include "server/serverconfig.h"
+#include "entity_table_redis.h"
 
 namespace KBEngine { 
 
@@ -113,7 +96,7 @@ bool DBInterfaceRedis::ping(redisContext* pRedisContext)
 bool DBInterfaceRedis::attach(const char* databaseName)
 {
 	//RedisWatcher::initializeWatcher();
-
+		
 	if(db_port_ == 0)
 		db_port_ = 6379;
 		
@@ -142,9 +125,7 @@ bool DBInterfaceRedis::attach(const char* databaseName)
 	// √‹¬Î—È÷§
 	if(!ping())
 	{
-		DEBUG_MSG(db_password_);
-		pRedisReply = (redisReply*)redisCommand(c, fmt::format("auth {}", db_password_).c_str());
-		DEBUG_MSG(fmt::format("auth {}", db_password_));
+		pRedisReply = (redisReply*)redisCommand(c, fmt::format("auth {}", db_password_).c_str());  
 		
 		if (NULL == pRedisReply) 
 		{ 
@@ -496,11 +477,11 @@ void DBInterfaceRedis::write_query_result_element(redisReply* pRedisReply, Memor
 //-------------------------------------------------------------------------------------
 const char* DBInterfaceRedis::c_str()
 {
-	static char strdescr[MAX_BUF];
-	kbe_snprintf(strdescr, MAX_BUF, "interface=%s, dbtype=redis, ip=%s, port=%u, currdatabase=%s, username=%s, connected=%s.\n", 
-		name_, db_ip_, db_port_, db_name_, db_username_, pRedisContext_ == NULL ? "no" : "yes");
+	static std::string strdescr;
+	strdescr = fmt::format("interface={}, dbtype=redis, ip={}, port={}, currdatabase={}, username={}, connected={}.\n",
+		name_, db_ip_, db_port_, db_name_, db_username_, (pRedisContext_ == NULL ? "no" : "yes"));
 
-	return strdescr;
+	return strdescr.c_str();
 }
 
 //-------------------------------------------------------------------------------------
@@ -524,7 +505,7 @@ int DBInterfaceRedis::getlasterror()
 //-------------------------------------------------------------------------------------
 EntityTable* DBInterfaceRedis::createEntityTable(EntityTables* pEntityTables)
 {
-	return NULL;
+	return new EntityTableRedis(pEntityTables);
 }
 
 //-------------------------------------------------------------------------------------
